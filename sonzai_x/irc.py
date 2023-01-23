@@ -1,10 +1,9 @@
 import logging
 
-from miniircd import Server as BaseServer
-from miniircd import Client as BaseClient
-from miniircd import irc_lower
 import miniircd
-
+from miniircd import Client as BaseClient
+from miniircd import Server as BaseServer
+from miniircd import irc_lower
 
 log = logging.getLogger(__name__)
 
@@ -115,9 +114,7 @@ class Client(BaseClient):
 
     def send_lusers(self):
         # Get this RPL_ISUPPORT in before lusers
-        self.reply(
-            b"005 %s CASEMAPPING=rfc1459 NETWORK=%s :are supported by this server" % (self.nickname, self.server.network_name)
-        )
+        self.reply(b"005 %s CASEMAPPING=rfc1459 NETWORK=%s :are supported by this server" % (self.nickname, self.server.network_name))
         super().send_lusers()
 
     def send_motd(self):

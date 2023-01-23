@@ -1,6 +1,6 @@
 venv:
 	virtualenv -p python3 venv
-	venv/bin/pip install -r requirements.txt
+	venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 
 install-service:
 	mkdir -p ~/.config/systemd/user

@@ -7,21 +7,20 @@ from difflib import SequenceMatcher
 from functools import partial
 from html import unescape
 from operator import itemgetter
-from threading import Thread
 from threading import Event
+from threading import Thread
 
 import sentry_sdk
 from emoji import emojize
+from sentry_sdk.integrations.threading import ThreadingIntegration
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from slack_sdk.rtm_v2 import RTMClient
 from slack_sdk.http_retry.builtin_handlers import RateLimitErrorRetryHandler
-from sentry_sdk.integrations.threading import ThreadingIntegration
+from slack_sdk.rtm_v2 import RTMClient
 from yaml import safe_load
 
 from sonzai_x.irc import Server
 from sonzai_x.key_view import KeyViewList
-
 
 NO_FALLBACK_TEXT_MESSAGE = "This content can't be displayed."
 # Not all punctuation is allowed before or after formatting
@@ -167,7 +166,7 @@ class SonzaiX:
             try:
                 user = self.slack_web.users_info(user=user_id)["user"]
             except SlackApiError as e:
-                if e.response['error'] == 'user_not_found':
+                if e.response["error"] == "user_not_found":
                     return
                 raise
 
@@ -290,10 +289,10 @@ class SonzaiX:
             user = self.get_user_by_id(channel["user"])
             channel_name = user["profile"]["display_name"] or user["name"]
 
-            if payload['user'] == self.identity['user_id']:
+            if payload["user"] == self.identity["user_id"]:
                 # Message from us, pretend it's from them
-                payload['text'] = f"[{self.identity['user']}] {payload['text']}"
-                payload['user'] = channel['user']
+                payload["text"] = f"[{self.identity['user']}] {payload['text']}"
+                payload["user"] = channel["user"]
         else:
             # No-op if already exists
             self.create_channel(channel)
@@ -302,7 +301,7 @@ class SonzaiX:
         log.info(f'Target is {payload["channel"]} = {channel_name}')
 
         user = self.get_user_by_id(payload["user"]) if "user" in payload else None
-        username = user["profile"]["display_name"] or user["name"] if user else payload.get("username") or payload['bot_profile']['name']
+        username = user["profile"]["display_name"] or user["name"] if user else payload.get("username") or payload["bot_profile"]["name"]
         log.info(f"Using `{username}` as author")
 
         if subtype == "channel_topic":
@@ -318,10 +317,10 @@ class SonzaiX:
                     log.info("Using rendered blocks instead of fallback text")
                     message = rendered_blocks
 
-            if 'attachments' in payload and self.config["formatting"]["render_attachments"]:
-                for attachment in payload['attachments']:
-                    if 'fallback' in attachment or 'text' in attachment:
-                        payload['text'] += f"\n{attachment['fallback'] or attachment['text']}"
+            if "attachments" in payload and self.config["formatting"]["render_attachments"]:
+                for attachment in payload["attachments"]:
+                    if "fallback" in attachment or "text" in attachment:
+                        payload["text"] += f"\n{attachment['fallback'] or attachment['text']}"
 
             message = self.format_message(payload["text"])
             messages = message.split("\n")
@@ -445,7 +444,7 @@ class SonzaiX:
     def channel_replace(self, match):
         fields = match.groupdict()
 
-        if fields['alias'] != '':
+        if fields["alias"] != "":
             return f'#{fields["alias"]}'
 
         channel = self.conversations_by_id.get(match.groupdict()["channel"])
