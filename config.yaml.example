@@ -17,6 +17,8 @@ formatting:
   prepend_at_to_names: true
   # Attempt to create text out of blocks if no fallback text was provided ("This content cannot be displayed")
   attempt_fallback_rendering: true
+  # Append attachment text, if any, to message
+  render_attachments: true
 
 sentry:
   enabled: false

@@ -311,6 +311,11 @@ class SonzaiX:
                     log.info("Using rendered blocks instead of fallback text")
                     message = rendered_blocks
 
+            if 'attachments' in payload and self.config["formatting"]["render_attachments"]:
+                for attachment in payload['attachments']:
+                    if 'fallback' in attachment or 'text' in attachment:
+                        payload['text'] += f"\n{attachment['fallback'] or attachment['text']}"
+
             message = self.format_message(payload["text"])
             messages = message.split("\n")
 
