@@ -295,7 +295,7 @@ class SonzaiX:
         log.info(f'Target is {payload["channel"]} = {channel_name}')
 
         user = self.get_user_by_id(payload["user"]) if "user" in payload else None
-        username = user["profile"]["display_name"] or user["name"] if user else payload["username"] or payload['bot_profile']['name']
+        username = user["profile"]["display_name"] or user["name"] if user else payload.get("username") or payload['bot_profile']['name']
         log.info(f"Using `{username}` as author")
 
         if subtype == "channel_topic":
