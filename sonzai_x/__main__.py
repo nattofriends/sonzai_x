@@ -405,8 +405,8 @@ class SonzaiX:
         message = emojize(message, language="alias")
 
         message = re.sub(r"<(?![@#!])(?P<link>[^>]+)>", link_replace, message)
-        message = re.sub(r"<@(?P<user>[A-Za-z0-9]+)(\|[^>]*)?>", self.user_replace, message)
-        message = re.sub(r"<#(?P<channel>[A-Za-z0-9]+)(\|[^>]*)?>", self.channel_replace, message)
+        message = re.sub(r"<@(?P<user>[A-Za-z0-9]+)(\|(?P<alias>[^>]*))?>", self.user_replace, message)
+        message = re.sub(r"<#(?P<channel>[A-Za-z0-9]+)(\|(?P<alias>[^>]*))?>", self.channel_replace, message)
         # @here, @channel, @everyone, and user groups
         message = re.sub(r"<!(?P<special>[a-z0-9-_.]+)([\|^][^>]*)?>", r"@\g<special>", message)
         # XXX: <!date>s not parsed, but humans are unlikely to write those
@@ -471,6 +471,11 @@ class SonzaiX:
         return match.group()
 
     def channel_replace(self, match):
+        fields = match.groupdict()
+
+        if fields['alias'] != '':
+            return f'#{fields["alias"]}'
+
         channel = self.conversations_by_id.get(match.groupdict()["channel"])
         if channel:
             return f'#{channel["name"]}'
