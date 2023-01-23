@@ -411,48 +411,7 @@ class SonzaiX:
         message = re.sub(r"<!(?P<special>[a-z0-9-_.]+)([\|^][^>]*)?>", r"@\g<special>", message)
         # XXX: <!date>s not parsed, but humans are unlikely to write those
 
-        code_block_starts = list(re.finditer(rf"(^|{VALID_FORMATTING_SURROUNDINGS})(?P<bt>```)", message, flags=re.M))
-        code_block_ends = list(re.finditer(rf"(?P<bt>```)($|{VALID_FORMATTING_SURROUNDINGS})", message, flags=re.M))
-
-        inline_code_starts = list(re.finditer(rf"(^|(?<={VALID_FORMATTING_SURROUNDINGS}))(?P<bt>`)(?![ `])", message, flags=re.M))
-        inline_code_ends = list(re.finditer(rf"(?<![ `])(?P<bt>`)(?=$|{VALID_FORMATTING_SURROUNDINGS})", message, flags=re.M))
-
-        code_block_ranges = pair_matches(
-            merge_matches(code_block_starts, code_block_ends, "bt"),
-            "bt",
-        )
-
-        inline_code_ranges = pair_matches(
-            merge_matches(inline_code_starts, inline_code_ends, "bt"),
-            "bt",
-        )
-
-        def format(match):
-            begin, end = match.span()
-
-            in_codeblock = in_range(begin, end, code_block_ranges)
-            in_inlinecode = in_range(begin, end, inline_code_ranges)
-
-            if in_codeblock or in_inlinecode:
-                return match.group()
-
-            matchdict = match.groupdict()
-
-            if matchdict["marker"] == "*":
-                replacement = "\x02"
-            elif matchdict["marker"] == "_":
-                replacement = "\x1d"
-            elif matchdict["marker"] == "~":
-                replacement = "\x1e"
-
-            return f'{matchdict["prefix"]}{replacement}{matchdict["inner"]}{replacement}{matchdict["suffix"]}'
-
-        message = re.sub(
-            rf"(?P<prefix>^|{VALID_FORMATTING_SURROUNDINGS})(?P<marker>[\*_~])(?!\s+)(?P<inner>[^\*_~]+)(?<!\s)(?P=marker)(?P<suffix>$|{VALID_FORMATTING_SURROUNDINGS})",
-            format,
-            message,
-            flags=re.M,
-        )
+        message = formatting_replace(message)
 
         return message
 
@@ -481,6 +440,53 @@ class SonzaiX:
             return f'#{channel["name"]}'
 
         return match.group()
+
+
+def formatting_replace(message):
+    code_block_starts = list(re.finditer(rf"(^|{VALID_FORMATTING_SURROUNDINGS})(?P<bt>```)", message, flags=re.M))
+    code_block_ends = list(re.finditer(rf"(?P<bt>```)($|{VALID_FORMATTING_SURROUNDINGS})", message, flags=re.M))
+
+    inline_code_starts = list(re.finditer(rf"(^|(?<={VALID_FORMATTING_SURROUNDINGS}))(?P<bt>`)(?![ `])", message, flags=re.M))
+    inline_code_ends = list(re.finditer(rf"(?<![ `])(?P<bt>`)(?=$|{VALID_FORMATTING_SURROUNDINGS})", message, flags=re.M))
+
+    code_block_ranges = pair_matches(
+        merge_matches(code_block_starts, code_block_ends, "bt"),
+        "bt",
+    )
+
+    inline_code_ranges = pair_matches(
+        merge_matches(inline_code_starts, inline_code_ends, "bt"),
+        "bt",
+    )
+
+    def format(match):
+        begin, end = match.span()
+
+        in_codeblock = in_range(begin, end, code_block_ranges)
+        in_inlinecode = in_range(begin, end, inline_code_ranges)
+
+        if in_codeblock or in_inlinecode:
+            return match.group()
+
+        matchdict = match.groupdict()
+
+        if matchdict["marker"] == "*":
+            replacement = "\x02"
+        elif matchdict["marker"] == "_":
+            replacement = "\x1d"
+        elif matchdict["marker"] == "~":
+            replacement = "\x1e"
+
+        return f'{matchdict["prefix"]}{replacement}{matchdict["inner"]}{replacement}{matchdict["suffix"]}'
+
+    message = re.sub(
+        rf"(?P<prefix>^|{VALID_FORMATTING_SURROUNDINGS})(?P<marker>[\*_~])(?!\s+)(?P<inner>[^\*_~]+)(?<!\s)(?P=marker)(?P<suffix>$|{VALID_FORMATTING_SURROUNDINGS})",
+        format,
+        message,
+        flags=re.M,
+    )
+
+    return message
 
 
 def merge_matches(a, b, match_group):
