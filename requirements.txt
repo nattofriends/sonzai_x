@@ -1,0 +1,5 @@
+emoji
+miniircd
+pyyaml
+slack-sdk
+sentry-sdk

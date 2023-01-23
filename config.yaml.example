@@ -1,0 +1,23 @@
+slack:
+  # xoxp- token for impersonating your user. If you have an xoxc- token, also set cookie_token to your xoxd- token
+  user_token: xoxp-whatever
+  cookie_token:
+
+irc:
+  address: 127.0.0.1
+  port: 6667
+  verbose: true
+  debug: true
+
+formatting:
+  # Show inline changes to previous message when it is edited
+  edit_diffs: true
+  # Minimum difflib similarity ratio to show diff
+  edit_diff_min_ratio: 0.8
+  prepend_at_to_names: true
+  # Attempt to create text out of blocks if no fallback text was provided ("This content cannot be displayed")
+  attempt_fallback_rendering: true
+
+sentry:
+  enabled: false
+  dsn:
