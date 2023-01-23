@@ -13,6 +13,7 @@ from threading import Event
 import sentry_sdk
 from emoji import emojize
 from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 from slack_sdk.rtm_v2 import RTMClient
 from slack_sdk.http_retry.builtin_handlers import RateLimitErrorRetryHandler
 from sentry_sdk.integrations.threading import ThreadingIntegration
@@ -161,7 +162,12 @@ class SonzaiX:
 
         if not user:
             log.info(f"Going to Slack to fetch info for {user_id}")
-            user = self.slack_web.users_info(user=user_id)["user"]
+            try:
+                user = self.slack_web.users_info(user=user_id)["user"]
+            except SlackApiError as e:
+                if e.response['error'] == 'user_not_found':
+                    return
+                raise
 
             self.users.append(user)
 
@@ -458,6 +464,7 @@ class SonzaiX:
         # user mentions could have aliases too, but I have never seen that
         prefix = "@" if self.config["formatting"]["prepend_at_to_names"] else ""
         user = self.get_user_by_id(match.groupdict()["user"])
+
         if user:
             return f"{prefix}{user['profile']['display_name'] or user['name']}"
 
