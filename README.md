@@ -8,7 +8,6 @@
 
 ## Bugs
 - **Read Only**: no support for sending messages to Slack
-- Message links not expanded (à la first party gateway)
 - Users are not implemented (cannot see who is in a channel)
 
 ## Getting Started

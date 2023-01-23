@@ -88,6 +88,8 @@ class SonzaiX:
             executor.submit(self.load_slack_users)
             executor.submit(self.load_slack_conversations)
 
+        self.identity = self.slack_web.auth_test()
+
         self.irc = Server(
             name=b"localhost",
             network_name=b"SonzaiX",
@@ -287,6 +289,11 @@ class SonzaiX:
         if channel["is_im"]:
             user = self.get_user_by_id(channel["user"])
             channel_name = user["profile"]["display_name"] or user["name"]
+
+            if payload['user'] == self.identity['user_id']:
+                # Message from us, pretend it's from them
+                payload['text'] = f"[{self.identity['user']}] {payload['text']}"
+                payload['user'] = channel['user']
         else:
             # No-op if already exists
             self.create_channel(channel)
@@ -412,7 +419,8 @@ class SonzaiX:
         message = re.sub(r"<(?![@#!])(?P<link>[^>]+)>", link_replace, message)
         message = re.sub(r"<@(?P<user>[A-Za-z0-9]+)(\|(?P<alias>[^>]*))?>", self.user_replace, message)
         message = re.sub(r"<#(?P<channel>[A-Za-z0-9]+)(\|(?P<alias>[^>]*))?>", self.channel_replace, message)
-        # @here, @channel, @everyone, and user groups
+        # @here, @channel, @everyone
+        # XXX: Support looking up usergroups
         message = re.sub(r"<!(?P<special>[a-z0-9-_.]+)([\|^][^>]*)?>", r"@\g<special>", message)
         # XXX: <!date>s not parsed, but humans are unlikely to write those
 
