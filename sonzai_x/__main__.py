@@ -86,7 +86,7 @@ class SonzaiX:
         self.slack_rtm.on("team_join")(partial(self.on_user_add.__func__, self))
         self.slack_rtm.on("user_change")(partial(self.on_user_update.__func__, self))
         self.slack_rtm.on("subteam_created")(partial(self.on_usergroup_add.__func__, self))
-        self.slack_rtm.on("subteam_updated")(partial(self.on_user_update.__func__, self))
+        self.slack_rtm.on("subteam_updated")(partial(self.on_usergroup_update.__func__, self))
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             executor.submit(self.load_slack_users)
