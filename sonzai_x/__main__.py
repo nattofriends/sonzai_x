@@ -82,10 +82,13 @@ class SonzaiX:
         self.slack_rtm.on("group_close")(partial(self.on_group_close.__func__, self))
         self.slack_rtm.on("team_join")(partial(self.on_user_add.__func__, self))
         self.slack_rtm.on("user_change")(partial(self.on_user_update.__func__, self))
+        self.slack_rtm.on("subteam_created")(partial(self.on_usergroup_add.__func__, self))
+        self.slack_rtm.on("subteam_updated")(partial(self.on_user_update.__func__, self))
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             executor.submit(self.load_slack_users)
             executor.submit(self.load_slack_conversations)
+            executor.submit(self.load_slack_usergroups)
 
         self.identity = self.slack_web.auth_test()
 
@@ -143,20 +146,15 @@ class SonzaiX:
         self.conversations = KeyViewList(conversations)
         self.conversations_by_id = self.conversations.register_itemgetter("id")
 
-    def get_conversation_by_id(self, conversation_id):
-        conversation = self.conversations_by_id.get(conversation_id)
+    def load_slack_usergroups(self):
+        log.info("Getting Slack usergroups")
+        usergroups = []
+        for i, resp in enumerate(self.slack_web.usergroups_list()):
+            log.info(f"{i}: Got {len(resp['usergroups'])} usergroups")
+            usergroups.extend(resp["usergroups"])
 
-        if not conversation:
-            log.info(f"Going to Slack to fetch info for {conversation_id}")
-            conversation = self.slack_web.conversations_info(
-                channel=conversation_id,
-                include_num_members=False,
-            )["channel"]
-
-            if not conversation["is_im"]:
-                self.conversations.append(conversation)
-
-        return conversation
+        self.usergroups = KeyViewList(usergroups)
+        self.usergroups_by_id = self.usergroups.register_itemgetter("id")
 
     def get_user_by_id(self, user_id):
         user = self.users_by_id.get(user_id)
@@ -173,6 +171,33 @@ class SonzaiX:
             self.users.append(user)
 
         return user
+
+    def get_conversation_by_id(self, conversation_id):
+        conversation = self.conversations_by_id.get(conversation_id)
+
+        if not conversation:
+            log.info(f"Going to Slack to fetch info for {conversation_id}")
+            conversation = self.slack_web.conversations_info(
+                channel=conversation_id,
+                include_num_members=False,
+            )["channel"]
+
+            if not conversation["is_im"]:
+                self.conversations.append(conversation)
+
+        return conversation
+
+    def get_usergroup_by_id(self, usergroup_id):
+        usergroup = self.usergroups_by_id.get(usergroup_id)
+
+        if not usergroup:
+            log.info(f"Going to Slack to fetch info for {usergroup_id}")
+            # There is no usergroup.info
+            self.load_slack_usergroups()
+            # If it isn't here now, it really isn't here
+            return self.usergroups_by_id.get(usergroup_id)
+
+        return usergroup
 
     def on_channel_join(self, client, payload):
         log.info(f"Received Slack join event: {payload}")
@@ -251,6 +276,14 @@ class SonzaiX:
     def on_user_update(self, client, payload):
         log.info("Received Slack user update event")
         self.get_user_by_id(payload["user"]["id"]).update(payload["user"])
+
+    def on_usergroup_add(self, client, payload):
+        log.info("Received Slack usergroup add event")
+        self.usergroups.append(payload["subteam"])
+
+    def on_usergroup_update(self, client, payload):
+        log.info("Received Slack usergroup update event")
+        self.get_usergroup_by_id(payload["subteam"]["id"]).update(payload["subteam"])
 
     def on_message(self, client, payload):
         log.info(
@@ -418,9 +451,8 @@ class SonzaiX:
         message = re.sub(r"<(?![@#!])(?P<link>[^>]+)>", link_replace, message)
         message = re.sub(r"<@(?P<user>[A-Za-z0-9]+)(\|(?P<alias>[^>]*))?>", self.user_replace, message)
         message = re.sub(r"<#(?P<channel>[A-Za-z0-9]+)(\|(?P<alias>[^>]*))?>", self.channel_replace, message)
-        # @here, @channel, @everyone
-        # XXX: Support looking up usergroups
-        message = re.sub(r"<!(?P<special>[a-z0-9-_.]+)([\|^][^>]*)?>", r"@\g<special>", message)
+        # @here, @channel, @everyone, @usergroups
+        message = re.sub(r"<!(?P<special>[a-z0-9-_.]+)(\^(?P<usergroup>[^\|>]+))?(\|(?P<alias>[^>]*))?>", self.group_replace, message)
         # XXX: <!date>s not parsed, but humans are unlikely to write those
 
         message = formatting_replace(message)
@@ -444,7 +476,7 @@ class SonzaiX:
     def channel_replace(self, match):
         fields = match.groupdict()
 
-        if fields["alias"] != "":
+        if fields["alias"]:
             return f'#{fields["alias"]}'
 
         channel = self.conversations_by_id.get(match.groupdict()["channel"])
@@ -452,6 +484,19 @@ class SonzaiX:
             return f'#{channel["name"]}'
 
         return match.group()
+
+    def group_replace(self, match):
+        fields = match.groupdict()
+
+        if fields["alias"]:
+            return fields["alias"]
+
+        if fields["usergroup"]:
+            usergroup = self.get_usergroup_by_id(fields["usergroup"])
+            if usergroup:
+                return f'@{usergroup["handle"]}'
+
+        return f'@{fields["special"]}'
 
 
 def formatting_replace(message):
