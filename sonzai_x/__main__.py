@@ -67,7 +67,10 @@ class SonzaiX:
 
         self.slack_web.retry_handlers.append(RateLimitErrorRetryHandler(max_retry_count=3))
 
-        self.slack_rtm = RTMClient(web_client=self.slack_web)
+        self.slack_rtm = RTMClient(
+            web_client=self.slack_web,
+            ping_interval=3,  # XXX: Should really find out why we keep getting disconnections
+        )
         # I'm not a bot, I swear!
         self.slack_rtm.bot_id = ""
 
@@ -139,9 +142,6 @@ class SonzaiX:
         ):
             log.info(f"{i}: Got {len(resp['channels'])} conversations")
             conversations.extend(resp["channels"])
-            #  XXX: REMOVE
-            #  if i > 25:
-            #      break
 
         self.conversations = KeyViewList(conversations)
         self.conversations_by_id = self.conversations.register_itemgetter("id")
@@ -322,7 +322,7 @@ class SonzaiX:
             user = self.get_user_by_id(channel["user"])
             channel_name = user["profile"]["display_name"] or user["name"]
 
-            if payload["user"] == self.identity["user_id"]:
+            if payload.get("user") == self.identity["user_id"]:
                 # Message from us, pretend it's from them
                 payload["text"] = f"[{self.identity['user']}] {payload['text']}"
                 payload["user"] = channel["user"]
@@ -363,8 +363,9 @@ class SonzaiX:
 
             if "files" in payload:
                 log.info("Generating additional messages for uploaded files")
+                prefix = "@" if self.config["formatting"]["prepend_at_to_names"] else ""
                 for file in payload["files"]:
-                    message = f'{username} shared a file: {file["name"]} {file["url_private"]}'
+                    message = f'{prefix}{username} shared a file: {file["name"]} {file["url_private"]}'
                     self.send_privmsg(username, channel_name, message)
 
     def create_channel(self, slack_channel):
