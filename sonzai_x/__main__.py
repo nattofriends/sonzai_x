@@ -307,16 +307,16 @@ class SonzaiX:
             return
 
         if subtype == "message_changed":
-            previous_text = payload["previous_message"]["text"]
-            current_text = payload["message"]["text"]
-            if current_text == previous_text:
+            previous_message = payload["previous_message"]
+            # XXX: Could be that text is same but blocks or attachments differ (unlikely) - this will not catch that
+            if payload["message"]["text"] == previous_message["text"]:
                 log.info("Skipping because text is the same")
                 return
 
             channel = payload["channel"]
             payload = payload["message"]
             payload["channel"] = channel
-            payload["text"] = self.format_message_edit(previous_text, current_text)
+            payload["previous_message"] = previous_message
         elif subtype == "me_message":
             payload["text"] = f'\x01ACTION {payload["text"]}\x01'
 
@@ -346,20 +346,7 @@ class SonzaiX:
             self.send_topic(username, channel_name, topic)
 
         else:
-            if payload["text"] == NO_FALLBACK_TEXT_MESSAGE and self.config["formatting"]["attempt_fallback_rendering"]:
-                # Could just be some smartass writing the message manually, or blocks we don't know
-                # how to render yet
-                rendered_blocks = self.render_blocks(payload["blocks"])
-                if rendered_blocks != "":
-                    log.info("Using rendered blocks instead of fallback text")
-                    message = rendered_blocks
-
-            if "attachments" in payload and self.config["formatting"]["render_attachments"]:
-                for attachment in payload["attachments"]:
-                    if "fallback" in attachment or "text" in attachment:
-                        payload["text"] += f"\n{attachment['fallback'] or attachment['text']}"
-
-            message = self.format_message(payload["text"])
+            message = self.render_message(payload, subtype=subtype)
             messages = message.split("\n")
 
             for message in messages:
@@ -407,6 +394,39 @@ class SonzaiX:
                 irc_message = f':{username} PRIVMSG {nick.decode("utf-8")} :{message}'.encode("utf-8")
                 client.message(irc_message)
                 client.socket_writable_notification()
+
+    def render_message(self, payload, subtype=None):
+        """
+        Take a message payload and return text for IRC, taking into account blocks and attachments.
+        `format_message` only formats Slack formatting in message text (a string)
+        """
+
+        if payload["text"] == NO_FALLBACK_TEXT_MESSAGE and self.config["formatting"]["attempt_fallback_rendering"]:
+            # Could just be some smartass writing the message manually, or blocks we don't know
+            # how to render yet
+            rendered_blocks = self.render_blocks(payload["blocks"])
+            if rendered_blocks != "":
+                log.info("Using rendered blocks instead of fallback text")
+                message = rendered_blocks
+        else:
+            message = payload["text"]
+
+        if "attachments" in payload and self.config["formatting"]["render_attachments"]:
+            for attachment in payload["attachments"]:
+                if "fallback" in attachment or "text" in attachment:
+                    message += f"\n{attachment['fallback'] or attachment['text']}"
+
+        log.info(f"*** FB: {message}")
+        message = self.format_message(message)
+        log.info(f"*** FA: {message}")
+
+        if subtype == "message_changed":
+            message = self.format_message_edit(
+                self.render_message(payload["previous_message"]),
+                message,
+            )
+
+        return message
 
     def render_blocks(self, blocks):
         log.info(f"Attempting to render blocks: {blocks}")
