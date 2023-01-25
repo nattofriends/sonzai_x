@@ -217,7 +217,7 @@ class SonzaiX:
     def on_channel_leave(self, client, payload):
         log.info(f"Received Slack leave event: {payload}")
 
-        channel = self.get_conversation_by_id.get(payload["channel"])
+        channel = self.get_conversation_by_id(payload["channel"])
         irc_channel = self.irc.get_channel(f'#{channel["name"]}'.encode("utf-8"))
 
         log.info(f'{payload["channel"]} = {channel["name"]} = {irc_channel}')
