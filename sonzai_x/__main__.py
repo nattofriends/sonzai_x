@@ -275,6 +275,10 @@ class SonzaiX:
 
     def on_user_update(self, client, payload):
         log.info("Received Slack user update event")
+        if payload["user"]["team_id"] != self.identity["team_id"]:
+            # Don't really care to store all this info
+            return
+
         self.get_user_by_id(payload["user"]["id"]).update(payload["user"])
 
     def on_usergroup_add(self, client, payload):
