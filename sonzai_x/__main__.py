@@ -416,9 +416,7 @@ class SonzaiX:
                 if "fallback" in attachment or "text" in attachment:
                     message += f"\n{attachment['fallback'] or attachment['text']}"
 
-        log.info(f"*** FB: {message}")
         message = self.format_message(message)
-        log.info(f"*** FA: {message}")
 
         if subtype == "message_changed":
             message = self.format_message_edit(
@@ -620,8 +618,10 @@ def link_replace(match):
 
     if text and text != link:
         # Exception: bare hostname turned link
-        if link.endswith(text):
+        if link[len(scheme.group()) : -len(text)] in ("", "//"):
             return text
+
+        # XXX: Might be nice to not render ellipsized URLs
         return f"\x1f{text}\x1f ({link})"
     else:
         return link

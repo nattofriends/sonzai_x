@@ -16,7 +16,7 @@ repos:
   rev: 6.0.0
   hooks:
   - id: flake8
-    args: [--extend-ignore=E501]
+    args: ['--extend-ignore=E203,E501']
 
 - repo: https://github.com/psf/black
   rev: 22.12.0
