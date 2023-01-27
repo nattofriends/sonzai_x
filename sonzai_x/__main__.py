@@ -1,11 +1,12 @@
+import html
 import json
 import logging
 import re
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
 from difflib import SequenceMatcher
+from functools import lru_cache
 from functools import partial
-from html import unescape
 from operator import itemgetter
 from threading import Event
 from threading import Thread
@@ -25,6 +26,14 @@ from sonzai_x.key_view import KeyViewList
 NO_FALLBACK_TEXT_MESSAGE = "This content can't be displayed."
 # Not all punctuation is allowed before or after formatting
 VALID_FORMATTING_SURROUNDINGS = r"[\x20-\x23\x25-\x2f\x3a\x3b\x3d\x3f\x40\x5b\x5c\x5d\x5f\x7b\x7d]"
+
+SKIN_TONE_MODIFIERS = {
+    "skin-tone-2": "\U0001f3fb",
+    "skin-tone-3": "\U0001f3fc",
+    "skin-tone-4": "\U0001f3fd",
+    "skin-tone-5": "\U0001f3fe",
+    "skin-tone-6": "\U0001f3ff",
+}
 
 log = logging.getLogger("sonzai_x")
 
@@ -468,8 +477,9 @@ class SonzaiX:
         message = message.strip("\r\n")
         # While double newlines form nice paragraph breaks in Slack, they are kind of useless in IRC
         message = re.sub(r"\n{2,}", "\n", message)
-        message = unescape(message)
-        message = emojize(message, language="alias")
+
+        message = htmlentities_replace(message)
+        message = emoji_replace(message)
 
         message = re.sub(r"<(?![@#!])(?P<link>[^>]+)>", link_replace, message)
         message = re.sub(r"<@(?P<user>[A-Za-z0-9]+)(\|(?P<alias>[^>]*))?>", self.user_replace, message)
@@ -522,7 +532,8 @@ class SonzaiX:
         return f'@{fields["special"]}'
 
 
-def formatting_replace(message):
+@lru_cache
+def get_code_ranges(message):
     code_block_starts = list(re.finditer(rf"(^|{VALID_FORMATTING_SURROUNDINGS})(?P<bt>```)", message, flags=re.M))
     code_block_ends = list(re.finditer(rf"(?P<bt>```)($|{VALID_FORMATTING_SURROUNDINGS})", message, flags=re.M))
 
@@ -539,13 +550,56 @@ def formatting_replace(message):
         "bt",
     )
 
+    return code_block_ranges + inline_code_ranges
+
+
+def htmlentities_replace(message):
+    # See definition of html.unescape
+    if "&" not in message:
+        return message
+
+    code_ranges = get_code_ranges(message)
+
     def format(match):
         begin, end = match.span()
+        in_code_range = in_range(begin, end, code_ranges)
+        if in_code_range:
+            return match.group()
 
-        in_codeblock = in_range(begin, end, code_block_ranges)
-        in_inlinecode = in_range(begin, end, inline_code_ranges)
+        return html._replace_charref(match)
 
-        if in_codeblock or in_inlinecode:
+    return html._charref.sub(format, message)
+
+
+def emoji_replace(message):
+    code_ranges = get_code_ranges(message)
+
+    def format(match):
+        begin, end = match.span()
+        in_code_range = in_range(begin, end, code_ranges)
+        if in_code_range:
+            return match.group()
+
+        fields = match.groupdict()
+
+        if fields["name"] in SKIN_TONE_MODIFIERS:
+            return SKIN_TONE_MODIFIERS[fields["name"]]
+
+        return emojize(match.group(), language="alias")
+
+    # emoji package doesn't handle skin tone modifiers for some reason
+    message = re.sub(r":(?P<name>[a-zA-Z0-9-_]+):", format, message)
+
+    return message
+
+
+def formatting_replace(message):
+    code_ranges = get_code_ranges(message)
+
+    def format(match):
+        begin, end = match.span()
+        in_code_range = in_range(begin, end, code_ranges)
+        if in_code_range:
             return match.group()
 
         matchdict = match.groupdict()
