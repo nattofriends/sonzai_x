@@ -1,4 +1,6 @@
 slack:
+  # How many concurrent RTM clients to start (messages will be deduplicated)
+  rtm_clients: 2
   # xoxp- token for impersonating your user. If you have an xoxc- token, also set cookie_token to your xoxd- token
   user_token: xoxp-whatever
   cookie_token:

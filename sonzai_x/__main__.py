@@ -9,9 +9,11 @@ from functools import lru_cache
 from functools import partial
 from operator import itemgetter
 from threading import Event
+from threading import Lock
 from threading import Thread
 
 import sentry_sdk
+from cachetools import LRUCache
 from emoji import emojize
 from sentry_sdk.integrations.threading import ThreadingIntegration
 from slack_sdk import WebClient
@@ -76,26 +78,16 @@ class SonzaiX:
 
         self.slack_web.retry_handlers.append(RateLimitErrorRetryHandler(max_retry_count=3))
 
-        self.slack_rtm = RTMClient(
-            web_client=self.slack_web,
-            ping_interval=3,  # XXX: Should really find out why we keep getting disconnections
-        )
-        # I'm not a bot, I swear!
-        self.slack_rtm.bot_id = ""
+        self.event_cache = LRUCache(maxsize=128)
+        self.event_cache_lock = Lock()
 
-        self.slack_rtm.on("message")(partial(self.on_message.__func__, self))
-        self.slack_rtm.on("channel_joined")(partial(self.on_channel_join.__func__, self))
-        self.slack_rtm.on("channel_left")(partial(self.on_channel_leave.__func__, self))
-        self.slack_rtm.on("channel_rename")(partial(self.on_channel_rename.__func__, self))
-        self.slack_rtm.on("group_joined")(partial(self.on_channel_join.__func__, self))
-        self.slack_rtm.on("group_left")(partial(self.on_channel_leave.__func__, self))
-        self.slack_rtm.on("group_rename")(partial(self.on_channel_rename.__func__, self))
-        self.slack_rtm.on("group_open")(partial(self.on_group_open.__func__, self))
-        self.slack_rtm.on("group_close")(partial(self.on_group_close.__func__, self))
-        self.slack_rtm.on("team_join")(partial(self.on_user_add.__func__, self))
-        self.slack_rtm.on("user_change")(partial(self.on_user_update.__func__, self))
-        self.slack_rtm.on("subteam_created")(partial(self.on_usergroup_add.__func__, self))
-        self.slack_rtm.on("subteam_updated")(partial(self.on_usergroup_update.__func__, self))
+        self.slack_rtms = []
+        for i in range(self.config["slack"]["rtm_clients"]):
+            log.info(f"Creating RTM client {i}")
+            register_secondary = i == 0
+            self.slack_rtms.append(
+                self.create_rtm(self.slack_web, register_secondary=register_secondary),
+            )
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             executor.submit(self.load_slack_users)
@@ -114,16 +106,45 @@ class SonzaiX:
         )
 
         for channel in sorted(
-            [channel for channel in self.conversations if channel["is_member"] and channel.get("is_open") is not False],
+            [channel for channel in self.conversations if channel["is_member"] is True and channel.get("is_open") is True],
             key=itemgetter("name"),
         ):
             self.create_channel(channel)
 
-        log.info("Starting Slack client")
-        self.slack_rtm.connect()
+        log.info("Starting Slack client(s)")
+        for rtm in self.slack_rtms:
+            rtm.connect()
+
         log.info("Starting IRC server")
         Thread(target=self.irc.start, name="irc", daemon=True).start()
         Event().wait()
+
+    def create_rtm(self, web_client, register_secondary=False):
+        rtm = RTMClient(
+            web_client=web_client,
+            ping_interval=3,  # XXX: Should really find out why we keep getting disconnections
+        )
+        # I'm not a bot, I swear!
+        rtm.bot_id = ""
+
+        rtm.on("message")(partial(self.on_message.__func__, self))
+
+        # These are like... not that important
+        if register_secondary:
+            rtm.on("channel_joined")(partial(self.on_channel_join.__func__, self))
+            rtm.on("channel_left")(partial(self.on_channel_leave.__func__, self))
+            rtm.on("channel_rename")(partial(self.on_channel_rename.__func__, self))
+            rtm.on("group_joined")(partial(self.on_channel_join.__func__, self))
+            rtm.on("group_left")(partial(self.on_channel_leave.__func__, self))
+            rtm.on("group_rename")(partial(self.on_channel_rename.__func__, self))
+            rtm.on("group_open")(partial(self.on_group_open.__func__, self))
+            rtm.on("group_close")(partial(self.on_group_close.__func__, self))
+            rtm.on("team_join")(partial(self.on_user_add.__func__, self))
+            rtm.on("user_change")(partial(self.on_user_update.__func__, self))
+            rtm.on("subteam_created")(partial(self.on_usergroup_add.__func__, self))
+            rtm.on("subteam_updated")(partial(self.on_usergroup_update.__func__, self))
+
+        return rtm
 
     def load_slack_users(self):
         log.info("Getting Slack users")
@@ -300,8 +321,17 @@ class SonzaiX:
 
     def on_message(self, client, payload):
         log.info(
-            f'Received Slack message: channel={payload["channel"]}, ' f'ts={payload["ts"]}, subtype={payload.get("subtype")}',
+            f'Received Slack message: channel={payload["channel"]}, '
+            f'ts={payload.get("event_ts") or payload.get("ts") or "(no timestamp?)"}, subtype={payload.get("subtype")}',
         )
+        cache_key = (payload["type"], payload.get("event_ts") or payload.get("ts") or 0, payload.get("subtype", ""))
+
+        with self.event_cache_lock:
+            if cache_key in self.event_cache:
+                return
+            else:
+                self.event_cache[cache_key] = None
+
         log.debug(json.dumps(payload, indent=2))
         subtype = payload.get("subtype")
 
