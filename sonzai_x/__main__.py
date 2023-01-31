@@ -105,11 +105,14 @@ class SonzaiX:
             debug=self.config["irc"]["debug"],
         )
 
-        for channel in sorted(
-            [channel for channel in self.conversations if channel["is_member"] is True and channel.get("is_open") is True],
-            key=itemgetter("name"),
+        for n, channel in enumerate(
+            sorted(
+                [channel for channel in self.conversations if channel.get("is_open") is not False],
+                key=itemgetter("name"),
+            )
         ):
             self.create_channel(channel)
+        log.info(f"Created {n+1} IRC channels for joined channels")
 
         log.info("Starting Slack client(s)")
         for rtm in self.slack_rtms:
@@ -150,9 +153,9 @@ class SonzaiX:
         log.info("Getting Slack users")
         users = []
         for i, resp in enumerate(
-            self.slack_web.users_list(
-                limit=1000,
-            )
+            # XXX: This works just fine without pagination, fetch several thousand
+            # people withou a problem
+            self.slack_web.users_list()
         ):
             log.info(f"{i}: Got {len(resp['members'])} users")
             users.extend(resp["members"])
@@ -163,8 +166,13 @@ class SonzaiX:
     def load_slack_conversations(self):
         log.info("Getting Slack conversations")
         conversations = []
+        # We're now using users.conversations here which only returns the conversations
+        # the calling user is in. This means that our cache of channel metadata
+        # will be incomplete but it doesn't really matter since we weren't in
+        # those channels anyway - plus this is very much faster than enumerating all
+        # the channels up front.
         for i, resp in enumerate(
-            self.slack_web.conversations_list(
+            self.slack_web.users_conversations(
                 limit=1000,
                 exclude_archived=True,
                 types="public_channel, private_channel, mpim",
