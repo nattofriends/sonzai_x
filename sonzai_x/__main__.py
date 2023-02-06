@@ -407,7 +407,18 @@ class SonzaiX:
             if "files" in payload:
                 log.info("Generating additional messages for uploaded files")
                 prefix = "@" if self.config["formatting"]["prepend_at_to_names"] else ""
+
+                previous_message_file_ids = []
+                if subtype == "message_changed" and "files" in payload["previous_message"]:
+                    previous_message_file_ids = [file["id"] for file in payload["previous_message"]["files"]]
+
                 for file in payload["files"]:
+                    if file["mode"] == "tombstone":
+                        continue
+                    if file["id"] in previous_message_file_ids:
+                        continue
+
+                    # XXX: Unclear which file modes always have name or url_private
                     message = f'{prefix}{username} shared a file: {file["name"]} {file["url_private"]}'
                     self.send_privmsg(username, channel_name, message)
 
