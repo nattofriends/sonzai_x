@@ -154,7 +154,9 @@ class SonzaiX:
         users = []
         for i, resp in enumerate(
             # XXX: This works just fine without pagination, fetch several thousand
-            # people withou a problem
+            # people without a problem
+            # It will probably fail on larger workspaces, which annoyingly we don't have
+            # access to: https://api.slack.com/changelog#changelog_date_2019-04
             self.slack_web.users_list()
         ):
             log.info(f"{i}: Got {len(resp['members'])} users")
@@ -240,9 +242,12 @@ class SonzaiX:
     def on_channel_join(self, client, payload):
         log.info(f"Received Slack join event: {payload}")
 
-        # Well, we'll take the updated information, thanks
         channel = self.conversations_by_id.get(payload["channel"]["id"])
-        channel.update(payload["channel"])
+        if channel:
+            channel.update(payload["channel"])
+        else:
+            self.conversations.append(payload["channel"])
+            channel = payload["channel"]
 
         irc_channel = self.create_channel(channel)
 
