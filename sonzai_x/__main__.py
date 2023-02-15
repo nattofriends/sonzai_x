@@ -364,9 +364,10 @@ class SonzaiX:
             return
 
         if subtype == "message_changed":
-            previous_message = payload["previous_message"]
+            # `previous_mesasge` is not always populated
+            previous_message = payload.get("previous_message")
             # XXX: Could be that text is same but blocks or attachments differ (unlikely) - this will not catch that
-            if payload["message"]["text"] == previous_message["text"]:
+            if previous_message and payload["message"]["text"] == previous_message["text"]:
                 log.info("Skipping because text is the same")
                 return
 
@@ -414,7 +415,7 @@ class SonzaiX:
                 prefix = "@" if self.config["formatting"]["prepend_at_to_names"] else ""
 
                 previous_message_file_ids = []
-                if subtype == "message_changed" and "files" in payload["previous_message"]:
+                if subtype == "message_changed" and payload["previous_message"] and "files" in payload["previous_message"]:
                     previous_message_file_ids = [file["id"] for file in payload["previous_message"]["files"]]
 
                 for file in payload["files"]:
@@ -486,7 +487,7 @@ class SonzaiX:
 
         message = self.format_message(message)
 
-        if subtype == "message_changed":
+        if subtype == "message_changed" and payload["previous_message"]:
             message = self.format_message_edit(
                 self.render_message(payload["previous_message"]),
                 message,
