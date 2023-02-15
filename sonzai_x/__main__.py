@@ -217,10 +217,15 @@ class SonzaiX:
 
         if not conversation:
             log.info(f"Going to Slack to fetch info for {conversation_id}")
-            conversation = self.slack_web.conversations_info(
-                channel=conversation_id,
-                include_num_members=False,
-            )["channel"]
+            try:
+                conversation = self.slack_web.conversations_info(
+                    channel=conversation_id,
+                    include_num_members=False,
+                )["channel"]
+            except SlackApiError as e:
+                if e.response["error"] == "channel_not_found":
+                    return
+                raise
 
             if not conversation["is_im"]:
                 self.conversations.append(conversation)
