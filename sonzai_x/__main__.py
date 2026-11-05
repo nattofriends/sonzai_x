@@ -24,6 +24,7 @@ from yaml import safe_load
 
 from sonzai_x.irc import Server
 from sonzai_x.key_view import KeyViewList
+from sonzai_x.rich_text import RichTextRenderer
 
 NO_FALLBACK_TEXT_MESSAGE = "This content can't be displayed."
 # Not all punctuation is allowed before or after formatting
@@ -55,6 +56,9 @@ def main():
 
 
 class SonzaiX:
+    def __repr__(self):
+        return f"<SonzaiX {self.identity=}"
+
     def __init__(self, config_file):
         with open(config_file) as fh:
             self.config = safe_load(fh)
@@ -89,6 +93,13 @@ class SonzaiX:
                 self.create_rtm(self.slack_web, register_secondary=register_secondary),
             )
 
+        self.rich_text_renderer = RichTextRenderer(
+            self.get_user_by_id,
+            self.get_conversation_by_id,
+            self.get_usergroup_by_id,
+            self.config["formatting"],
+        )
+
         with ThreadPoolExecutor(max_workers=4) as executor:
             executor.submit(self.load_slack_users)
             executor.submit(self.load_slack_conversations)
@@ -112,7 +123,7 @@ class SonzaiX:
             )
         ):
             self.create_channel(channel)
-        log.info(f"Created {n+1} IRC channels for joined channels")
+        log.info(f"Created {n + 1} IRC channels for joined channels")
 
         log.info("Starting Slack client(s)")
         for rtm in self.slack_rtms:
@@ -323,7 +334,7 @@ class SonzaiX:
 
     def on_user_update(self, client, payload):
         log.info("Received Slack user update event")
-        if payload["user"]["team_id"] != self.identity["team_id"]:
+        if payload["user"].get("team_id") != self.identity["team_id"]:
             # Don't really care to store all this info
             return
 
@@ -335,7 +346,9 @@ class SonzaiX:
 
     def on_usergroup_update(self, client, payload):
         log.info("Received Slack usergroup update event")
-        self.get_usergroup_by_id(payload["subteam"]["id"]).update(payload["subteam"])
+        usergroup = self.get_usergroup_by_id(payload["subteam"]["id"])
+        if usergroup is not None:
+            usergroup.update(payload["subteam"])
 
     def on_message(self, client, payload):
         log.info(
@@ -454,9 +467,12 @@ class SonzaiX:
         if is_channel:
             irc_message = f":{username} PRIVMSG {target} :{message}".encode("utf-8")
             irc_channel = self.irc.channels.get(target.encode("utf-8"))
-            for client in irc_channel.members:
-                client.message(irc_message)
-                client.socket_writable_notification()
+            if irc_channel is None:
+                log.error(f"IRC channel {target} not found, dropping message")
+            else:
+                for client in irc_channel.members:
+                    client.message(irc_message)
+                    client.socket_writable_notification()
         else:
             # Send all PMs to everyone!
             for nick, client in self.irc.nicknames.items():
@@ -480,12 +496,21 @@ class SonzaiX:
         else:
             message = payload["text"]
 
+        # TODO: Incorporate when rendering from rich text
         if "attachments" in payload and self.config["formatting"]["render_attachments"]:
             for attachment in payload["attachments"]:
                 if "fallback" in attachment or "text" in attachment:
                     message += f"\n{attachment['fallback'] or attachment['text']}"
 
-        message = self.format_message(message)
+        # Requires block knowledge, so not in format_message
+        if "blocks" in payload:
+            for block in payload["blocks"]:
+                if block["type"] == "rich_text":
+                    message = self.rich_text_renderer.render(block)
+                    break
+                # TODO: Multiple rich_text blocks in a message?
+        else:
+            message = self.format_message(message)
 
         if subtype == "message_changed" and payload["previous_message"]:
             message = self.format_message_edit(
@@ -496,13 +521,18 @@ class SonzaiX:
         return message
 
     def render_blocks(self, blocks):
+        """
+        Rendering of rich_text blocks doesn't happen here, this is for fallback rendering
+        when an app provides blocks but no fallback text. We try to make something from the text
+        of each block.
+        """
         log.info(f"Attempting to render blocks: {blocks}")
 
         result = []
 
         for block in blocks:
-            # XXX: Don't know how to render blocks of type `rich_text`, which have `elements`
-            if "text" in block:
+            # Rich text block rendering happens elsewhere; this is for other blocks which have text we can use
+            if "text" in block and block["type"] != "rich_text":
                 result.append(block["text"]["text"])
 
         return "\n".join(result)
@@ -538,6 +568,10 @@ class SonzaiX:
         # While double newlines form nice paragraph breaks in Slack, they are kind of useless in IRC
         message = re.sub(r"\n{2,}", "\n", message)
 
+        # Slack escapes all <>& in `text` so it is not actually possible to know if those entities
+        # should be escaped inside a code block. They are correctly escaped in rich_text blocks,
+        # so rich text rendering is preferred and is what is received from humans,
+        # but bots which separately pass blocks and text still need to have their text formatted.
         message = htmlentities_replace(message)
         message = emoji_replace(message)
 
@@ -622,6 +656,7 @@ def htmlentities_replace(message):
 
     def format(match):
         begin, end = match.span()
+        # TODO: Honor config text_htmlentities_in_code_ranges_unescaped
         in_code_range = in_range(begin, end, code_ranges)
         if in_code_range:
             return match.group()

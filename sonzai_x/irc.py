@@ -41,6 +41,7 @@ class Server(BaseServer):
         self.channels = {}
         self.clients = {}
         self.nicknames = {}
+        self.ssl_context = None
 
     def remove_channel(self, channel, internal=False):
         if not internal:
