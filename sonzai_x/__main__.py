@@ -47,6 +47,8 @@ def main():
         level=logging.INFO,
     )
 
+    logging.getLogger("slack_sdk.socket_mode.builtin.connection").addFilter(lambda record: "Failed to check the state of sock" not in record.getMessage())
+
     parser = ArgumentParser(description="Limited bridge for exposing Slack via IRC")
     parser.add_argument("--config-file", default="config.yaml")
 
@@ -338,7 +340,11 @@ class SonzaiX:
             # Don't really care to store all this info
             return
 
-        self.get_user_by_id(payload["user"]["id"]).update(payload["user"])
+        user = self.get_user_by_id(payload["user"]["id"])
+        if user is not None:
+            user.update(payload["user"])
+        else:
+            self.users.append(payload["user"])
 
     def on_usergroup_add(self, client, payload):
         log.info("Received Slack usergroup add event")
@@ -349,6 +355,8 @@ class SonzaiX:
         usergroup = self.get_usergroup_by_id(payload["subteam"]["id"])
         if usergroup is not None:
             usergroup.update(payload["subteam"])
+        else:
+            self.usergroups.append(payload["subteam"])
 
     def on_message(self, client, payload):
         log.info(
